@@ -22,6 +22,11 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
-      run: dotnet test --no-restore --verbosity normal
+      run: dotnet test --configuration Release --no-restore --verbosity normal
     - name: Publish
-      run: dotnet publish
+      run: dotnet publish --configuration Release
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: Release
+        path: /home/runner/work/scindexer/scindexer/bin/Release/netcoreapp3.1/publish/
