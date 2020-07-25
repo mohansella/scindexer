@@ -3,6 +3,7 @@ using DeviceIOControlLib.Objects.Usn;
 using DeviceIOControlLib.Wrapper;
 using Microsoft.Win32.SafeHandles;
 using SCIndexer.Native;
+using SCIndexer.Record;
 using System;
 using System.IO;
 using System.Linq;
@@ -12,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace SCIndexer.Journal
 {
-    public class AbstractJournalScanner : JournalScanner
+    public class AbstractJournalScanner : IFileRecordScanner
     {
 
         protected readonly SafeFileHandle volumeHandle;
@@ -23,6 +24,7 @@ namespace SCIndexer.Journal
         private readonly static string DriveLetterRegexString = @"^(\S)\:\\(.*)";
 
         public long FromUsn { get; set; }
+        public long ScanLastUsn { get; protected set; }
           
         protected AbstractJournalScanner(string scanFolder)
         {
@@ -56,7 +58,7 @@ namespace SCIndexer.Journal
             return true;
         }
 
-        public long Scan(JournalScanListener listener)
+        public void Scan(IFileRecordListener listener)
         {
             USN firstUsn = this.FromUsn;
 
@@ -65,10 +67,12 @@ namespace SCIndexer.Journal
                 var usnRecords = this.usnIo.FileSystemReadUsnJournal(UsnJournalReasonMask.All, firstUsn);
                 foreach (USN_RECORD_V2 usnRecord in usnRecords)
                 {
-                    var fileDescriptor = new FILE_ID_DESCRIPTOR();
-                    fileDescriptor.dwSize = 100;
-                    fileDescriptor.FileReferenceNumber = usnRecord.FileReferenceNumber;
-                    fileDescriptor.type = FILE_ID_TYPE.FileIdType;
+                    var fileDescriptor = new FILE_ID_DESCRIPTOR
+                    {
+                        dwSize = 100,
+                        FileReferenceNumber = usnRecord.FileReferenceNumber,
+                        type = FILE_ID_TYPE.FileIdType
+                    };
                     var fileHandle = Kernel32.OpenFileById(this.volumeHandle, ref fileDescriptor, FileAccess.Read, FileShare.ReadWrite, IntPtr.Zero, FileAttributes.Normal);
                     
                     if(fileHandle.IsInvalid)
@@ -79,7 +83,8 @@ namespace SCIndexer.Journal
                     var filePath = Kernel32.GetFinalPathNameByHandle(fileHandle);
                     if(this.AcceptFile(filePath, usnRecord.FileName))
                     {
-                        listener.Listen(filePath, usnRecord.FileName, usnRecord.Reason);
+                        var reason = Convert(usnRecord.Reason);
+                        listener.Listen(filePath, reason);
                     }
                 }
                 
@@ -91,8 +96,21 @@ namespace SCIndexer.Journal
                 firstUsn.Usn = usnRecords.Last().Usn.Usn + 1;
             } while (true);
 
-            return firstUsn.Usn;
+            this.ScanLastUsn = firstUsn.Usn;
         }
-
+ 
+        public static FileRecordReason Convert(UsnJournalReasonMask mask)
+        {
+            switch(mask)
+            {
+                case UsnJournalReasonMask.USN_REASON_FILE_CREATE:
+                    return FileRecordReason.Create;
+                case UsnJournalReasonMask.USN_REASON_FILE_DELETE:
+                    return FileRecordReason.Delete;
+                default:
+                    return FileRecordReason.Update;
+            }
+        }
     }
+
 }

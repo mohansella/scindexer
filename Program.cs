@@ -1,4 +1,5 @@
 ﻿using SCIndexer.Journal;
+using SCIndexer.Record;
 using System;
 
 namespace SCIndexer
@@ -9,7 +10,7 @@ namespace SCIndexer
         {
             var scanFolder = @"D:\test";
             var journalScanner = new SimpleJournalScanner(scanFolder);
-            var journalListener = new ConsoleJournalScanListener();
+            var journalListener = new ConsoleFileListener();
             journalScanner.Scan(journalListener);
         }
     }
