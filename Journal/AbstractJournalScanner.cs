@@ -1,10 +1,9 @@
-﻿using DeviceIOControlLib.Objects.Usn;
+﻿using BetterWin32Errors;
+using DeviceIOControlLib.Objects.Usn;
 using DeviceIOControlLib.Wrapper;
 using Microsoft.Win32.SafeHandles;
-using SCIndexer.Utils;
+using SCIndexer.Native;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -18,7 +17,7 @@ namespace SCIndexer.Journal
 
         private string scanFolder;
         private char driveLetter;
-        private SafeFileHandle hddHandle;
+        private SafeFileHandle volumeHandle;
         private UsnDeviceWrapper usnIo;
         private long fromUsn;
 
@@ -40,20 +39,20 @@ namespace SCIndexer.Journal
             }
 
             var drivePath = $"\\\\.\\{driveLetter}:";
-            this.hddHandle = NativeWrapper.CreateFile(drivePath, FileAccess.Read, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open, FileAttributes.Normal, IntPtr.Zero);
+            this.volumeHandle = Kernel32.CreateFile(drivePath, FileAccess.Read, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open, FileAttributes.Normal, IntPtr.Zero);
 
-            if (hddHandle.IsInvalid)
+            if (volumeHandle.IsInvalid)
             {
-                var lastError = Marshal.GetLastWin32Error();
-                var hintMessage = lastError == 5 ? ". Try Run As Administrator" : string.Empty;
+                var lastError = Win32Exception.GetLastWin32Error();
+                var hintMessage = lastError == Win32Error.ERROR_ACCESS_DENIED ? ". Try Run As Administrator" : string.Empty;
                 throw new Win32Exception(lastError, $"{new Win32Exception(lastError).Message} for path: \"{drivePath}\" {hintMessage}");
             }
 
-            this.usnIo = new UsnDeviceWrapper(hddHandle, true);
+            this.usnIo = new UsnDeviceWrapper(volumeHandle, true);
         }
 
 
-        protected bool AcceptFile(string fileFolder, string fileFullName, string fileExtension)
+        protected bool AcceptFile(string filePath, string fileName)
         {
             return true;
         }
@@ -64,10 +63,25 @@ namespace SCIndexer.Journal
 
             do
             {
-                var usnRecords = this.usnIo.FileSystemReadUsnJournal(UsnJournalReasonMask.All, firstUsn);
+                var usnRecords = this.usnIo.FileSystemReadUsnJournal(UsnJournalReasonMask.All, firstUsn, 100);
                 foreach (USN_RECORD_V2 usnRecord in usnRecords)
                 {
+                    var fileDescriptor = new FILE_ID_DESCRIPTOR();
+                    fileDescriptor.dwSize = 100;
+                    fileDescriptor.FileReferenceNumber = usnRecord.FileReferenceNumber;
+                    fileDescriptor.type = FILE_ID_TYPE.FileIdType;
+                    var fileHandle = Kernel32.OpenFileById(this.volumeHandle, ref fileDescriptor, FileAccess.Read, FileShare.ReadWrite, IntPtr.Zero, FileAttributes.Normal);
                     
+                    if(fileHandle.IsInvalid)
+                    {
+                        continue;
+                    } 
+
+                    var filePath = Kernel32.GetFinalPathNameByHandle(fileHandle);
+                    if(this.AcceptFile(filePath, usnRecord.FileName))
+                    {
+                        listener.Listen(filePath, usnRecord.FileName, usnRecord.Reason);
+                    }
                 }
                 
                 if(usnRecords.Length == 0)
