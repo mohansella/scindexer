@@ -15,23 +15,23 @@ namespace SCIndexer.Journal
     public class AbstractJournalScanner : JournalScanner
     {
 
-        private string scanFolder;
-        private char driveLetter;
-        private SafeFileHandle volumeHandle;
-        private UsnDeviceWrapper usnIo;
-        private long fromUsn;
+        protected readonly SafeFileHandle volumeHandle;
+        protected readonly UsnDeviceWrapper usnIo;
+        protected readonly char driveLetter;
+        protected readonly string scanFolder;
 
-        private readonly static string DriveLetterRegexString = @"^\S\:\\";
+        private readonly static string DriveLetterRegexString = @"^(\S)\:\\(.*)";
 
-        protected AbstractJournalScanner(string scanFolder, long fromUsn = 0)
+        public long FromUsn { get; set; }
+          
+        protected AbstractJournalScanner(string scanFolder)
         {
             this.scanFolder = Path.GetFullPath(scanFolder);
-            this.fromUsn = fromUsn;
             var driveLetterRegex = new Regex(DriveLetterRegexString);
             var driveLetterMatch = driveLetterRegex.Match(this.scanFolder);
             if(driveLetterMatch.Success)
             {
-                this.driveLetter = driveLetterMatch.Groups.Values.ElementAt(0).Value.ToUpper()[0]; //extract first letter in upper case
+                this.driveLetter = driveLetterMatch.Groups.Values.ElementAt(1).Value.ToUpper()[0]; //extract first letter in upper case
             }
             else
             {
@@ -51,19 +51,18 @@ namespace SCIndexer.Journal
             this.usnIo = new UsnDeviceWrapper(volumeHandle, true);
         }
 
-
-        protected bool AcceptFile(string filePath, string fileName)
+        protected virtual bool AcceptFile(string filePath, string fileName)
         {
             return true;
         }
 
-        public void Scan(JournalScanListener listener)
+        public long Scan(JournalScanListener listener)
         {
-            USN firstUsn = this.fromUsn;
+            USN firstUsn = this.FromUsn;
 
             do
             {
-                var usnRecords = this.usnIo.FileSystemReadUsnJournal(UsnJournalReasonMask.All, firstUsn, 100);
+                var usnRecords = this.usnIo.FileSystemReadUsnJournal(UsnJournalReasonMask.All, firstUsn);
                 foreach (USN_RECORD_V2 usnRecord in usnRecords)
                 {
                     var fileDescriptor = new FILE_ID_DESCRIPTOR();
@@ -92,7 +91,8 @@ namespace SCIndexer.Journal
                 firstUsn.Usn = usnRecords.Last().Usn.Usn + 1;
             } while (true);
 
-
+            return firstUsn.Usn;
         }
+
     }
 }

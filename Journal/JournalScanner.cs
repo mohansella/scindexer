@@ -7,7 +7,7 @@ namespace SCIndexer.Journal
     public interface JournalScanner
     {
 
-        public void Scan(JournalScanListener listener);
+        public long Scan(JournalScanListener listener);
 
     }
 }
