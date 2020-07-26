@@ -1,4 +1,6 @@
-﻿using System;
+﻿using SCIndexer.Record.Filter;
+using SCIndexer.Record.Listener;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -9,7 +11,8 @@ namespace SCIndexer.Journal
 
         private string extendedContextPath;
 
-        public SimpleJournalScanner(string scanFolder) : base(scanFolder)
+        public SimpleJournalScanner(string scanFolder, IFileRecordListener recordListener, IFileRecordFilter recordFilter = null) 
+            : base(scanFolder, recordListener, recordFilter)
         {
             this.extendedContextPath = $"\\\\?\\{scanFolder}";  //  sample path: \\?\D:\test\test.txt
         }

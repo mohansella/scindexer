@@ -4,6 +4,8 @@ using DeviceIOControlLib.Wrapper;
 using Microsoft.Win32.SafeHandles;
 using SCIndexer.Native;
 using SCIndexer.Record;
+using SCIndexer.Record.Filter;
+using SCIndexer.Record.Listener;
 using System;
 using System.IO;
 using System.Linq;
@@ -16,19 +18,24 @@ namespace SCIndexer.Journal
     public class AbstractJournalScanner : IFileRecordScanner
     {
 
+
+        protected readonly string scanFolder;
+        protected readonly char driveLetter;
+        protected readonly IFileRecordListener recordListener;
+        protected readonly IFileRecordFilter recordFilter;
         protected readonly SafeFileHandle volumeHandle;
         protected readonly UsnDeviceWrapper usnIo;
-        protected readonly char driveLetter;
-        protected readonly string scanFolder;
 
         private readonly static string DriveLetterRegexString = @"^(\S)\:\\(.*)";
 
         public long FromUsn { get; set; }
         public long ScanLastUsn { get; protected set; }
           
-        protected AbstractJournalScanner(string scanFolder)
+        protected AbstractJournalScanner(string scanFolder, IFileRecordListener recordListener, IFileRecordFilter recordFilter = null)
         {
             this.scanFolder = Path.GetFullPath(scanFolder);
+            this.recordFilter = recordFilter;
+            this.recordListener = recordListener;
             var driveLetterRegex = new Regex(DriveLetterRegexString);
             var driveLetterMatch = driveLetterRegex.Match(this.scanFolder);
             if(driveLetterMatch.Success)
@@ -58,7 +65,12 @@ namespace SCIndexer.Journal
             return true;
         }
 
-        public void Scan(IFileRecordListener listener)
+        protected virtual bool Filter(string filePath, FileRecordReason reason)
+        {
+            return this.recordFilter == null || this.recordFilter.Filter(filePath, reason);
+        }
+
+        public void Scan()
         {
             USN firstUsn = this.FromUsn;
 
@@ -81,10 +93,10 @@ namespace SCIndexer.Journal
                     } 
 
                     var filePath = Kernel32.GetFinalPathNameByHandle(fileHandle);
-                    if(this.AcceptFile(filePath, usnRecord.FileName))
+                    var reason = Convert(usnRecord.Reason);
+                    if (this.AcceptFile(filePath, usnRecord.FileName) && this.Filter(filePath, reason))
                     {
-                        var reason = Convert(usnRecord.Reason);
-                        listener.Listen(filePath, reason);
+                        this.recordListener.Listen(filePath, reason);
                     }
                 }
                 
